@@ -6,6 +6,9 @@ const bodyParse = require('body-parser')
 
 const connectDB = require('./Config/db')
 
+
+const { readdirSync } = require('fs')
+
 const app = express();
 
 connectDB()
