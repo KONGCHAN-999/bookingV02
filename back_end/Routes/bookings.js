@@ -9,11 +9,12 @@ const {
     remove
 } = require('../Controllers/booking')
 
-router.get('/booking', list)
-router.get('/booking/:id', read)
-router.post('/booking', create)
-router.put('/booking/:id', update)
-router.delete('/booking/:id', remove)
+const { auth } = require('../middleware/auth')
 
+router.get('/booking',auth, list)
+router.get('/booking/:id',auth, read)
+router.post('/booking',auth, create)
+router.put('/booking/:id',auth, update)
+router.delete('/booking/:id',auth, remove)
 
 module.exports = router;

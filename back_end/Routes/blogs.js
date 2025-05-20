@@ -10,11 +10,13 @@ const {
     remove
 } = require('../Controllers/blog')
 
-router.get('/blog', list)
-router.get('/blog/:id', read)
-router.post('/blog', create)
-router.put('/blog/:id', update)
-router.delete('/blog/:id', remove)
+const { auth } = require('../middleware/auth')
+
+router.get('/blog', auth, list)
+router.get('/blog/:id', auth, read)
+router.post('/blog', auth, create)
+router.put('/blog/:id', auth, update)
+router.delete('/blog/:id', auth, remove)
 
 
 module.exports = router;

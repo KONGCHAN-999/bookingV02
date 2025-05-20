@@ -2,14 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../css/NavBar.css';
 import logo from '../assets/logo.png';
-import { auth, db } from '../data/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 function NavBar() {
   const [user, setUser] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
   const navigate = useNavigate();
+  const API_URL = 'http://localhost:3000/api';
 
   const handlePopupAccount = () => {
     setShowPopup(true);
@@ -20,26 +18,43 @@ function NavBar() {
   };
 
   useEffect(() => {
-    // Listen for authentication state changes
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        // Fetch user data from Firestore
-        const userDoc = doc(db, 'users', currentUser.uid);
-        const docSnap = await getDoc(userDoc);
-        if (docSnap.exists()) {
-          setUser({ ...docSnap.data(), email: currentUser.email, uid: currentUser.uid });
-        } else {
-          console.log('No such document!');
-          setUser({ email: currentUser.email, uid: currentUser.uid });
-        }
-      } else {
-        setUser(null); // No user is logged in
+    // Check for authentication token and fetch user data
+    const fetchUserData = async () => {
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        setUser(null);
+        return;
       }
-    });
+      
+      try {
+        // Verify token with backend and get user data
+        const response = await fetch(`${API_URL}/user/current`, {
+          method: 'GET',
+          headers: {
+            'authtoken': token,
+            'Content-Type': 'application/json'
+          }
+        });
 
-    // Cleanup subscription on unmount
-    return () => unsubscribe();
-  }, []); // Empty dependency array since we only want to set up the listener once
+        if (!response.ok) {
+          // Token invalid or expired
+          localStorage.removeItem('authToken');
+          setUser(null);
+          return;
+        }
+
+        const userData = await response.json();
+        setUser(userData);
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        localStorage.removeItem('authToken');
+        setUser(null);
+      }
+    };
+
+    fetchUserData();
+  }, []); // Empty dependency array since we only want to fetch user data once on component mount
 
   useEffect(() => {
     if (showPopup) {
@@ -58,8 +73,16 @@ function NavBar() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
-      console.log('User logged out successfully');
+      // Call logout endpoint if needed
+      const token = localStorage.getItem('authToken');
+      // Note: Server-side logout is not implemented in the provided backend
+      // But we could call it here if it was
+      
+      // Remove token from localStorage
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
+      
+      setUser(null);
       setShowPopup(false);
       navigate('/');
     } catch (error) {
