@@ -147,31 +147,7 @@ function Register() {
                 required
               />
             </div>
-            <div className="mb-3">
-              <label htmlFor="role" className="form-label">Role</label>
-              <select
-                className="form-control"
-                id="role"
-                name="role"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-              >
-                <option value="user">User</option>
-                <option value="doctor">Doctor</option>
-              </select>
-              <small className="form-text text-muted">Admin accounts can only be created by system administrators.</small>
-            </div>
-            <div className="mb-3">
-              <label htmlFor="profilePicture" className="form-label">Profile Picture</label>
-              <input
-                type="file"
-                className="form-control"
-                id="profilePicture"
-                name="profilePicture"
-                onChange={(e) => setProfilePicture(e.target.files[0])}
-                accept="image/*"
-              />
-            </div>
+        
             <button 
               type="submit" 
               className="btn btn-primary w-100"
