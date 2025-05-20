@@ -8,7 +8,7 @@ const usersController = require('../Controllers/usersControllers');
 // @desc    Register user
 // @access  Public
 router.post(
-    '/',
+    '/register',
     [
         check('name', 'Name is required').not().isEmpty(),
         check('email', 'Please include a valid email').isEmail(),
@@ -20,21 +20,21 @@ router.post(
 // @route   GET /api/users
 // @desc    Get all users
 // @access  Private/Admin
-router.get('/', auth, usersController.getUsers);
+router.get('/user', auth, usersController.getUsers);
 
 // @route   GET /api/users/:id
 // @desc    Get user by ID
 // @access  Private/Admin or Self
-router.get('/:id', auth, usersController.getUserById);
+router.get('/user:id', auth, usersController.getUserById);
 
 // @route   PUT /api/users/:id
 // @desc    Update user
 // @access  Private/Admin or Self
-router.put('/:id', auth, usersController.updateUser);
+router.put('/user:id', auth, usersController.updateUser);
 
 // @route   DELETE /api/users/:id
 // @desc    Delete user
 // @access  Private/Admin or Self
-router.delete('/:id', auth, usersController.deleteUser);
+router.delete('/user:id', auth, usersController.deleteUser);
 
 module.exports = router; 

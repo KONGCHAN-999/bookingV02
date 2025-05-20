@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../data/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import axios from 'axios';
 import '../css/Login.css';
+
+const API_URL = 'http://localhost:3000/api/user';
 
 function Login() {
     const [email, setEmail] = useState('');
@@ -18,37 +18,38 @@ function Login() {
 
     // Check if user is already logged in
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            if (currentUser) {
-                try {
-                    // Check user role to decide where to redirect
-                    const userDoc = doc(db, 'users', currentUser.uid);
-                    const docSnap = await getDoc(userDoc);
-
-                    if (docSnap.exists()) {
-                        const userData = docSnap.data();
-
+        const checkAuthStatus = async () => {
+            try {
+                // Check if token exists in localStorage
+                const token = localStorage.getItem('authToken');
+                
+                if (token) {
+                    // Verify token with the server
+                    const response = await axios.get(`${API_URL}/users/verify`, {
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (response.data.user) {
                         // If returning from a protected page, navigate there
                         if (from !== '/login' && from !== '/') {
                             navigate(from, { replace: true });
-                        } else if (userData.role === 'admin') {
+                        } else if (response.data.user.role === 'admin') {
                             navigate('/dctoradmin', { replace: true });
                         } else {
                             navigate('/', { replace: true });
                         }
-                    } else {
-                        // Default to home if user document doesn't exist
-                        navigate('/', { replace: true });
                     }
-                } catch (error) {
-                    console.error('Error checking user role:', error);
-                    setError('An error occurred while checking your account. Please try again.');
-                    navigate('/', { replace: true });
                 }
+            } catch (error) {
+                // If token verification fails, clear localStorage
+                localStorage.removeItem('authToken');
+                console.error('Auth verification error:', error);
             }
-        });
+        };
 
-        return () => unsubscribe();
+        checkAuthStatus();
     }, [navigate, from]);
 
     const handleSubmit = async (e) => {
@@ -57,42 +58,49 @@ function Login() {
         setLoading(true);
 
         try {
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            const user = userCredential.user;
+            // Send login request to the server
+            const response = await axios.post(`${API_URL}`, {
+                email,
+                password
+            });
 
-            // Check user role to determine redirect
-            const userDoc = doc(db, 'users', user.uid);
-            const docSnap = await getDoc(userDoc);
-
-            if (docSnap.exists()) {
-                const userData = docSnap.data();
-
-                // If returning from a protected page, navigate there
+            // Store the JWT token in localStorage
+            localStorage.setItem('authToken', response.data.token);
+            
+            // Store user data if needed
+            if (response.data.user) {
+                localStorage.setItem('userData', JSON.stringify(response.data.user));
+                
+                // Redirect based on user role
                 if (from !== '/login' && from !== '/') {
                     navigate(from, { replace: true });
-                } else if (userData.role === 'admin') {
+                } else if (response.data.user.role === 'admin') {
                     navigate('/dctoradmin', { replace: true });
                 } else {
                     navigate('/', { replace: true });
                 }
-            } else {
-                // Default to home if user document doesn't exist
-                navigate('/', { replace: true });
             }
-
         } catch (error) {
-            console.error('Error signing in:', error);
-
-            // Set user-friendly error messages
-            if (error.code === 'auth/invalid-email' || error.code === 'auth/invalid-credential') {
-                setError('Invalid email or password. Please try again.');
-            } else if (error.code === 'auth/user-not-found') {
-                setError('No account found with this email.');
-            } else if (error.code === 'auth/wrong-password') {
-                setError('Incorrect password.');
-            } else if (error.code === 'auth/too-many-requests') {
-                setError('Too many failed login attempts. Please try again later.');
+            console.error('Login error:', error);
+            
+            // Handle different error types
+            if (error.response) {
+                // The request was made and the server responded with a status code
+                // that falls out of the range of 2xx
+                if (error.response.status === 401) {
+                    setError('Invalid email or password. Please try again.');
+                } else if (error.response.status === 404) {
+                    setError('No account found with this email.');
+                } else if (error.response.status === 429) {
+                    setError('Too many failed login attempts. Please try again later.');
+                } else {
+                    setError(error.response.data.message || 'Failed to sign in. Please try again.');
+                }
+            } else if (error.request) {
+                // The request was made but no response was received
+                setError('Server not responding. Please try again later.');
             } else {
+                // Something happened in setting up the request
                 setError('Failed to sign in. Please try again.');
             }
         } finally {
