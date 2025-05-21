@@ -1,15 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Dashboard from './Dashboard';
 import './css/Doctor.css';
 import profile01 from '../assets/images/profile01.avif';
 import { LuPencil } from "react-icons/lu";
+import { FaTrash, FaEye, FaPlus } from "react-icons/fa";
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function Doctor() {
-    // API endpoints for MongoDB
+    // API endpoints for MongoDB with environment variables for flexibility
     const API_URL = 'http://localhost:3000/api/doctor';
+    const IMAGE_BASE_URL = 'http://localhost:3000/';
 
-    const [doctors, setDoctors] = useState({
+    // Initial state for doctor form
+    const initialDoctorState = {
         fullName: '',
         age: '',
         specialty: '',
@@ -17,8 +22,11 @@ function Doctor() {
         email: '',
         education: '',
         experience: '',
-        certifications: ''
-    });
+        certifications: '',
+        image: null
+    };
+
+    const [doctors, setDoctors] = useState(initialDoctorState);
     const [getDataDoctor, setGetDataDoctor] = useState([]);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [editId, setEditId] = useState(null);
@@ -26,65 +34,100 @@ function Doctor() {
     const [selectedDoctorId, setSelectedDoctorId] = useState(null);
     const [showDetailPopup, setShowDetailPopup] = useState(false);
     const [selectedDoctor, setSelectedDoctor] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Fetch doctor data from MongoDB API
+    // Fetch doctor data from MongoDB API - enhanced with memoization and loading state
+    const fetchDoctorData = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const response = await axios.get(API_URL);
+            setGetDataDoctor(response.data);
+        } catch (error) {
+            console.error('Error fetching doctors:', error);
+            toast.error(`Failed to fetch doctors: ${error.response?.data?.message || error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [API_URL]);
+
     useEffect(() => {
-        const fetchDoctorData = async () => {
-            try {
-                const response = await axios.get(API_URL);
-                setGetDataDoctor(response.data);
-            } catch (error) {
-                console.error('Error fetching doctors:', error);
-            }
-        };
         fetchDoctorData();
-    }, []);
+    }, [fetchDoctorData]);
+
+    // Reset form function
+    const resetForm = () => {
+        setDoctors(initialDoctorState);
+        setEditId(null);
+        setImagePreview(null);
+    };
 
     const toggleSidebar = () => {
         setIsSidebarOpen(!isSidebarOpen);
-        setDoctors({
-            fullName: '',
-            age: '',
-            specialty: '',
-            contact: '',
-            email: '',
-            education: '',
-            experience: '',
-            certifications: ''
-        }); // Clear form
-        setEditId(null); // Reset edit mode
+        resetForm();
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!doctors.fullName || !doctors.email) {
-            alert('Full name and email are required!');
+
+        // Form Validation
+        if (!doctors.fullName.trim()) {
+            toast.error('Full name is required!');
             return;
         }
 
+        if (!doctors.email.trim()) {
+            toast.error('Email is required!');
+            return;
+        }
+
+        if (doctors.email && !/\S+@\S+\.\S+/.test(doctors.email)) {
+            toast.error('Please enter a valid email address!');
+            return;
+        }
+
+        if (doctors.contact && !/^\+?[0-9]{10,15}$/.test(doctors.contact.replace(/[-\s]/g, ''))) {
+            toast.error('Please enter a valid contact number (10-15 digits)!');
+            return;
+        }
+
+        setIsSubmitting(true);
+
         try {
+            // Create FormData object to handle file uploads
+            const formData = new FormData();
+            Object.keys(doctors).forEach(key => {
+                if (key === 'image' && doctors.image) {
+                    formData.append('image', doctors.image);
+                } else if (key !== 'image') {
+                    formData.append(key, doctors[key]);
+                }
+            });
+
             if (editId) {
                 // Update existing doctor in MongoDB
-                await axios.put(`${API_URL}/${editId}`, doctors);
-                alert('Doctor updated successfully!');
-                setGetDataDoctor((prev) =>
-                    prev.map((doc) =>
-                        doc._id === editId ? { _id: editId, ...doctors } : doc
-                    )
-                );
+                await axios.put(`${API_URL}/${editId}`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                toast.success('Doctor updated successfully!');
             } else {
                 // Add new doctor to MongoDB
-                const response = await axios.post(API_URL, doctors);
-                alert('Doctor added successfully!');
-                setGetDataDoctor((prev) => [
-                    ...prev,
-                    { _id: response.data._id, ...doctors },
-                ]);
+                await axios.post(API_URL, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                toast.success('Doctor added successfully!');
             }
+
+            // Fetch updated data to refresh the list
+            await fetchDoctorData();
             toggleSidebar();
         } catch (error) {
             console.error('Error saving doctor:', error);
-            alert('Error saving doctor: ' + error.message);
+            toast.error(`Error: ${error.response?.data?.message || error.message}`);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -94,6 +137,37 @@ function Doctor() {
             ...prev,
             [name]: value,
         }));
+    };
+
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            // Check file size (limit to 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error('Image size should not exceed 5MB');
+                e.target.value = '';
+                return;
+            }
+
+            // Check file type
+            if (!file.type.match('image.*')) {
+                toast.error('Please select an image file');
+                e.target.value = '';
+                return;
+            }
+
+            setDoctors(prev => ({
+                ...prev,
+                image: file
+            }));
+
+            // Create preview URL for the selected image
+            const previewURL = URL.createObjectURL(file);
+            setImagePreview(previewURL);
+
+            // Clean up the URL when component unmounts
+            return () => URL.revokeObjectURL(previewURL);
+        }
     };
 
     const openPopup = (id) => {
@@ -107,14 +181,17 @@ function Doctor() {
     };
 
     const handleDelete = async (id) => {
+        setIsLoading(true);
         try {
             // Delete doctor from MongoDB
             await axios.delete(`${API_URL}/${id}`);
             setGetDataDoctor((prev) => prev.filter((doctor) => doctor._id !== id));
-            alert('Doctor deleted successfully!');
+            toast.success('Doctor deleted successfully!');
         } catch (error) {
             console.error('Error deleting doctor:', error);
-            alert('Error deleting doctor: ' + error.message);
+            toast.error(`Error: ${error.response?.data?.message || error.message}`);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -135,8 +212,17 @@ function Doctor() {
             email: doctor.email || '',
             education: doctor.education || '',
             experience: doctor.experience || '',
-            certifications: doctor.certifications || ''
+            certifications: doctor.certifications || '',
+            image: null // We don't set the file object itself
         });
+
+        // Set image preview if available
+        if (doctor.file) {
+            setImagePreview(`${IMAGE_BASE_URL}${doctor.file}`);
+        } else {
+            setImagePreview(null);
+        }
+
         setIsSidebarOpen(true);
     };
 
@@ -150,69 +236,118 @@ function Doctor() {
         setShowDetailPopup(false);
     };
 
+    // Function to get doctor's image
+    const getDoctorImage = (doctor) => {
+        if (doctor.file) {
+            return `${IMAGE_BASE_URL}${doctor.file}`;
+        }
+        return profile01; // Default image
+    };
+
+    // Filter doctors based on search term
+    const filteredDoctors = getDataDoctor.filter(doctor =>
+        doctor.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        doctor.specialty.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        doctor.email.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     return (
         <div>
             <Dashboard />
+            <ToastContainer position="top-right" autoClose={3000} />
             <div className="container_admin">
                 <div className="box-list-users">
                     <div className="user-list-header">
                         <h1>Doctor Management</h1>
-                        <button className="add-user-button" onClick={toggleSidebar}>
-                            <i className="bx bx-plus"></i>
-                            Add Doctor
-                        </button>
+                        <div className="search-add-container">
+                            <div className="search-box">
+                                <input
+                                    type="text"
+                                    placeholder="Search doctors..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="search-input"
+                                />
+                            </div>
+                            <button className="add-user-button" onClick={toggleSidebar}>
+                                <FaPlus />
+                                Add Doctor
+                            </button>
+                        </div>
                     </div>
 
-                    <table className="user-list-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Full Name</th>
-                                <th scope="col">Age</th>
-                                <th scope="col">Specialty</th>
-                                <th scope="col">Contact</th>
-                                <th scope="col">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {
-                                getDataDoctor.map((doctor) => (
-                                    <tr key={doctor._id}>
-                                        <td>{doctor.fullName}</td>
-                                        <td>{doctor.age}</td>
-                                        <td>{doctor.specialty}</td>
-                                        <td>{doctor.contact}</td>
-                                        <td>
-                                            <div className="action-buttons">
-                                                <button
-                                                    className="edit-button"
-                                                    onClick={() => handleUpdate(doctor)}
-                                                    aria-label={`Edit ${doctor.fullName}`}
-                                                >
-                                                    <LuPencil />
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    className="delete-button"
-                                                    onClick={() => openPopup(doctor._id)}
-                                                    aria-label={`Delete ${doctor.fullName}`}
-                                                >
-                                                    <i className="bx bx-trash"></i>
-                                                    Delete
-                                                </button>
-                                                <button
-                                                    className="edit-view"
-                                                    onClick={() => handleDetail(doctor)}
-                                                    aria-label={`View ${doctor.fullName}`}
-                                                >
-                                                    <i className="bx bx-show"></i>
-                                                    View
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                        </tbody>
-                    </table>
+                    {isLoading ? (
+                        <div className="loading-spinner">Loading...</div>
+                    ) : (
+                        <>
+                            {filteredDoctors.length === 0 ? (
+                                <div className="no-records">
+                                    <p>No doctors found. {searchTerm ? 'Try a different search term.' : 'Add your first doctor!'}</p>
+                                </div>
+                            ) : (
+                                <div className="table-responsive">
+                                    <table className="user-list-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Image</th>
+                                                <th scope="col">Full Name</th>
+                                                <th scope="col">Age</th>
+                                                <th scope="col">Specialty</th>
+                                                <th scope="col">Contact</th>
+                                                <th scope="col">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredDoctors.map((doctor) => (
+                                                <tr key={doctor._id}>
+                                                    <td>
+                                                        <img
+                                                            src={getDoctorImage(doctor)}
+                                                            alt={doctor.fullName}
+                                                            className="doctor-list-image"
+                                                            loading="lazy"
+                                                        />
+                                                    </td>
+                                                    <td>{doctor.fullName}</td>
+                                                    <td>{doctor.age}</td>
+                                                    <td>{doctor.specialty}</td>
+                                                    <td>{doctor.contact}</td>
+                                                    <td>
+                                                        <div className="action-buttons">
+                                                            <button
+                                                                className="edit-button"
+                                                                onClick={() => handleUpdate(doctor)}
+                                                                aria-label={`Edit ${doctor.fullName}`}
+                                                            >
+                                                                <LuPencil />
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                className="delete-button"
+                                                                onClick={() => openPopup(doctor._id)}
+                                                                aria-label={`Delete ${doctor.fullName}`}
+                                                            >
+                                                                <FaTrash />
+                                                                Delete
+                                                            </button>
+                                                            <button
+                                                                className="edit-view"
+                                                                onClick={() => handleDetail(doctor)}
+                                                                aria-label={`View ${doctor.fullName}`}
+                                                            >
+                                                                <FaEye />
+                                                                View
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
 
                 {/* Delete Confirmation Popup */}
@@ -220,12 +355,13 @@ function Doctor() {
                     <div className="popup_delete">
                         <div className="popup_delete_content">
                             <h3>Are you sure you want to delete this Doctor?</h3>
+                            <p className="delete-warning">This action cannot be undone.</p>
                             <div className="popup_buttons">
-                                <button className="button btn_delete" onClick={confirmDelete}>
-                                    Yes
+                                <button className="button btn_delete" onClick={confirmDelete} disabled={isLoading}>
+                                    {isLoading ? 'Deleting...' : 'Yes, Delete'}
                                 </button>
                                 <button className="button btn_cancel" onClick={closePopup}>
-                                    No
+                                    Cancel
                                 </button>
                             </div>
                         </div>
@@ -245,7 +381,13 @@ function Doctor() {
                             <div className="box_profileDetail">
                                 <div className="detail_item">
                                     <h3>Profile</h3>
-                                    <img src={profile01} alt="Not provided" />
+                                    <img
+                                        src={selectedDoctor.file ?
+                                            `${IMAGE_BASE_URL}${selectedDoctor.file}` :
+                                            profile01}
+                                        alt={selectedDoctor.fullName}
+                                        className="doctor-detail-image"
+                                    />
                                 </div>
                             </div>
                             <div className="detail_body">
@@ -282,6 +424,17 @@ function Doctor() {
                                     <p className="detail_text">{selectedDoctor.certifications || 'Not provided'}</p>
                                 </div>
                             </div>
+                            <div className="detail_footer">
+                                <button
+                                    className="edit-button"
+                                    onClick={() => {
+                                        handleUpdate(selectedDoctor);
+                                        closeDetailPopup();
+                                    }}
+                                >
+                                    <LuPencil /> Edit Doctor
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -298,7 +451,7 @@ function Doctor() {
                         </div>
                         <form onSubmit={handleSubmit} className="form_addDoctor">
                             <div className="form-group">
-                                <label htmlFor="fullName">Full Name:</label>
+                                <label htmlFor="fullName">Full Name: <span className="required">*</span></label>
                                 <input
                                     type="text"
                                     id="fullName"
@@ -306,6 +459,7 @@ function Doctor() {
                                     value={doctors.fullName}
                                     onChange={handleChange}
                                     required
+                                    placeholder="Enter doctor's full name"
                                 />
                             </div>
                             <div className="form-group">
@@ -318,6 +472,7 @@ function Doctor() {
                                     onChange={handleChange}
                                     min="18"
                                     max="100"
+                                    placeholder="Enter doctor's age"
                                 />
                             </div>
                             <div className="form-group">
@@ -328,6 +483,7 @@ function Doctor() {
                                     name="specialty"
                                     value={doctors.specialty}
                                     onChange={handleChange}
+                                    placeholder="E.g. Cardiology, Neurology, etc."
                                 />
                             </div>
                             <div className="form-group">
@@ -338,10 +494,11 @@ function Doctor() {
                                     name="contact"
                                     value={doctors.contact}
                                     onChange={handleChange}
+                                    placeholder="Contact number"
                                 />
                             </div>
                             <div className="form-group">
-                                <label htmlFor="email">Email:</label>
+                                <label htmlFor="email">Email: <span className="required">*</span></label>
                                 <input
                                     type="email"
                                     id="email"
@@ -349,6 +506,7 @@ function Doctor() {
                                     value={doctors.email}
                                     onChange={handleChange}
                                     required
+                                    placeholder="doctor@example.com"
                                 />
                             </div>
                             <div className="form-group">
@@ -358,7 +516,8 @@ function Doctor() {
                                     name="education"
                                     value={doctors.education}
                                     onChange={handleChange}
-                                    rows="5"
+                                    rows="3"
+                                    placeholder="Educational background"
                                 ></textarea>
                             </div>
                             <div className="form-group">
@@ -368,7 +527,8 @@ function Doctor() {
                                     name="experience"
                                     value={doctors.experience}
                                     onChange={handleChange}
-                                    rows="5"
+                                    rows="3"
+                                    placeholder="Professional experience"
                                 ></textarea>
                             </div>
                             <div className="form-group">
@@ -378,12 +538,60 @@ function Doctor() {
                                     name="certifications"
                                     value={doctors.certifications}
                                     onChange={handleChange}
-                                    rows="5"
+                                    rows="3"
+                                    placeholder="Professional certifications"
                                 ></textarea>
                             </div>
-                            <button className="btn_submit_doctor" type="submit">
-                                {editId ? 'Update Doctor' : 'Add Doctor'}
-                            </button>
+                            <div className="form-group">
+                                <label htmlFor="image">Doctor Image:</label>
+                                <input
+                                    type="file"
+                                    id="image"
+                                    name="image"
+                                    accept="image/*"
+                                    onChange={handleImageChange}
+                                />
+                                <p className="file-hint">Max size: 5MB. Formats: JPG, PNG, GIF</p>
+                                {imagePreview && (
+                                    <div className="image-preview">
+                                        <img
+                                            src={imagePreview}
+                                            alt="Preview"
+                                            className="preview-image"
+                                        />
+                                        <button
+                                            type="button"
+                                            className="remove-image"
+                                            onClick={() => {
+                                                setImagePreview(null);
+                                                setDoctors(prev => ({ ...prev, image: null }));
+                                                document.getElementById('image').value = '';
+                                            }}
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="form-buttons">
+                                <button
+                                    type="button"
+                                    className="btn_cancel_doctor"
+                                    onClick={toggleSidebar}
+                                    disabled={isSubmitting}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="btn_submit_doctor"
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                >
+                                    {isSubmitting ?
+                                        (editId ? 'Updating...' : 'Adding...') :
+                                        (editId ? 'Update Doctor' : 'Add Doctor')}
+                                </button>
+                            </div>
                         </form>
                     </div>
                 )}

@@ -12,12 +12,13 @@ const {
 } = require('../Controllers/doctor')
 
 const { auth } = require('../middleware/auth')
+const { upload } = require('../middleware/upload')
 
-router.get('/doctor',auth, list)
-router.get('/doctor/:id',auth, read)
-router.post('/doctor',auth, create)
-router.put('/doctor/:id',auth, update)
-router.delete('/doctor/:id',auth, remove)
+router.get('/doctor', list)
+router.get('/doctor/:id', read)
+router.post('/doctor', upload, create)
+router.put('/doctor/:id', update)
+router.delete('/doctor/:id', remove)
 
 
 module.exports = router;

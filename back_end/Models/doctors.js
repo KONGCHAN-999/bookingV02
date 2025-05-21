@@ -36,7 +36,8 @@ const doctors = mongoose.Schema({
     certifications: {
         type: [String],
         default: []
-    }
+    },
+    file: String,
 }, { timestamps: true }); // Note: lowercase 't' in timestamps
 
 module.exports = mongoose.model('Doctor', doctors);

@@ -24,7 +24,7 @@ function Blogs() {
     const [selectedBlogId, setSelectedBlogId] = useState(null);
     const [showDetailPopup, setShowDetailPopup] = useState(false);
     const [selectedBlog, setSelectedBlog] = useState(null);
-    const API_URL = 'http://localhost:3000/api/blogs';
+    const API_URL = 'http://localhost:3000/api/blog/';
 
     // Format date to YYYY-MM-DD for input fields
     const formatDateForInput = (dateString) => {

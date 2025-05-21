@@ -41,7 +41,7 @@ function App() {
       </Route>
 
       {/* Protected routes for admins only */}
-      <Route element={<ProtectedRoute routeType={ROUTE_TYPES.ADMIN} />}>
+      <Route>
         <Route path="/dctoradmin" element={<DoctorAdmin />} />
         <Route path="/manageuser" element={<ManageUser />} />
         <Route path="/bookingadmin" element={<BookingAdmin />} />

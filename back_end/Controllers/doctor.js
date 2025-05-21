@@ -1,5 +1,6 @@
 
 const Doctor = require('../Models/doctors')
+const fs = require('fs')
 
 exports.read = async (req, res) => {
     try {
@@ -28,8 +29,11 @@ exports.list = async (req, res) => {
 exports.create = async (req, res) => {
     try {
         // code
-        console.log(req.body)
-        const create = await Doctor(req.body).save()
+        var data = req.body
+        if (req.file) {
+            data.file = req.file.filename
+        }
+        const create = await Doctor(data).save()
         res.send(create)
     } catch (err) {
         // error
@@ -57,12 +61,21 @@ exports.update = async (req, res) => {
 
 exports.remove = async (req, res) => {
     try {
+        // code
         const id = req.params.id
         const removed = await Doctor.findOneAndDelete({ _id: id }).exec()
-        if (!removed) {
-            return res.status(404).send({ error: 'Doctor not found' });
+
+        if (removed?.file) {
+            await fs.unlink('./uploads/' + removed.file, (err) => {
+                if (err) {
+                    console.log(err)
+                } else {
+                    console.log('Remove success')
+                }
+            })
         }
-        res.send({ message: 'Doctor deleted successfully', doctor: removed })
+
+        res.send(removed)
     } catch (err) {
         console.error('Error in remove:', err);
         res.status(500).send({ error: err.message || 'Server Error' })
