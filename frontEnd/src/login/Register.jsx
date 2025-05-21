@@ -1,18 +1,17 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../css/login.css';
-import axios from 'axios'; // You'll need to install axios: npm install axios
+import axios from 'axios';
 
 function Register() {
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState('user');
-  const [profilePicture, setProfilePicture] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const API_URL = 'http://localhost:3000/api/register/';
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -20,12 +19,25 @@ function Register() {
     setLoading(true);
 
     // Validate inputs
-    if (!name || !email || !password) {
+    if (!email || !password || !confirmPassword) {
       setError('Please fill in all required fields.');
       setLoading(false);
       return;
     }
-    
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError('Please enter a valid email address.');
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 4) {
+      setError('Password must be at least 4 characters long.');
+      setLoading(false);
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
       setLoading(false);
@@ -33,48 +45,37 @@ function Register() {
     }
 
     try {
-      // Create FormData object to handle file upload
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('email', email);
-      formData.append('password', password);
-      formData.append('role', role);
-      
-      // Only append profilePicture if it's selected
-      if (profilePicture) {
-        formData.append('profilePicture', profilePicture);
-      }
-
-      // Send registration data to your backend API
-      const response = await axios.post('/api/users/register', formData, {
+      const response = await axios.post(`${API_URL}`, {
+        email,
+        password,
+      }, {
         headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+          'Content-Type': 'application/json',
+        },
       });
 
       console.log('Registration successful:', response.data);
-      
-      // Save token to localStorage if your backend returns one
-      if (response.data.token) {
-        localStorage.setItem('userToken', response.data.token);
-      }
-      
-      // Redirect to home page after successful registration
-      navigate('/home');
 
+      if (response.data.token) {
+        localStorage.setItem('userToken', response.data.token); // Consider secure alternatives
+      }
+
+      navigate('/home');
     } catch (error) {
-      // Handle errors from the API
       if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        setError(error.response.data.message || 'Registration failed. Please try again.');
+        const { status, data } = error.response;
+        if (status === 400) {
+          setError(data.message || 'Invalid input data.');
+        } else if (status === 409) {
+          setError(data.message || 'Email already exists.');
+        } else {
+          setError('Registration failed. Please try again.');
+        }
         console.error('Registration error:', error.response.data);
       } else if (error.request) {
-        // The request was made but no response was received
         setError('No response from server. Please check your connection.');
         console.error('No response received:', error.request);
       } else {
-        // Something happened in setting up the request that triggered an Error
         setError('An error occurred. Please try again later.');
         console.error('Error:', error.message);
       }
@@ -84,86 +85,77 @@ function Register() {
   };
 
   return (
-    <>
-      <div className="container_register d-flex justify-content-center align-items-center min-vh-100">
-        <div className="w-50 style_conten">
-          <div className="box_title">
-            <h2 className="">Register</h2>
-            <Link to='/'>
-              <i className='bx bx-x'></i>
-            </Link>
+    <div className="container_register d-flex justify-content-center align-items-center min-vh-100">
+      <div className="w-50 style_conten">
+        <div className="box_title">
+          <h2>Register</h2>
+          <Link to="/" aria-label="Close">
+            <i className="bx bx-x"></i>
+          </Link>
+        </div>
+        {error && (
+          <div id="error-message" className="alert alert-danger">
+            {error}
           </div>
-          {error && <div className="alert alert-danger">{error}</div>}
-          <form onSubmit={handleRegister}>
-            <div className="mb-3">
-              <label htmlFor="name" className="form-label">Name</label>
-              <input
-                type="text"
-                className="form-control"
-                id="name"
-                name="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter your name"
-                required
-              />
-            </div>
-            <div className="mb-3">
-              <label htmlFor="email" className="form-label">Email address</label>
-              <input
-                type="email"
-                className="form-control"
-                id="email"
-                name="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                required
-              />
-            </div>
-            <div className="mb-3">
-              <label htmlFor="password" className="form-label">Password</label>
-              <input
-                type="password"
-                className="form-control"
-                id="password"
-                name="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-              />
-            </div>
-            <div className="mb-3">
-              <label htmlFor="confirmPassword" className="form-label">Confirm Password</label>
-              <input
-                type="password"
-                className="form-control"
-                id="confirmPassword"
-                name="confirmPassword"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm your password"
-                required
-              />
-            </div>
-        
-            <button 
-              type="submit" 
-              className="btn btn-primary w-100"
-              disabled={loading}
-            >
-              {loading ? 'Registering...' : 'Register'}
-            </button>
-          </form>
-          <div className="login-footer link_to_register">
-            <p>
-              Already have an account? <Link to="/login">Login</Link>
-            </p>
+        )}
+        <form onSubmit={handleRegister}>
+          <div className="mb-3">
+            <label htmlFor="email" className="form-label">Email address</label>
+            <input
+              type="email"
+              className="form-control"
+              id="email"
+              name="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email"
+              required
+              aria-describedby={error ? 'error-message' : null}
+            />
           </div>
+          <div className="mb-3">
+            <label htmlFor="password" className="form-label">Password</label>
+            <input
+              type="password"
+              className="form-control"
+              id="password"
+              name="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              required
+              aria-describedby={error ? 'error-message' : null}
+            />
+          </div>
+          <div className="mb-3">
+            <label htmlFor="confirmPassword" className="form-label">Confirm Password</label>
+            <input
+              type="password"
+              className="form-control"
+              id="confirmPassword"
+              name="confirmPassword"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm your password"
+              required
+              aria-describedby={error ? 'error-message' : null}
+            />
+          </div>
+          <button
+            type="submit"
+            className="btn btn-primary w-100"
+            disabled={loading}
+          >
+            {loading ? 'Registering...' : 'Register'}
+          </button>
+        </form>
+        <div className="login-footer link_to_register">
+          <p>
+            Already have an account? <Link to="/login">Login</Link>
+          </p>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
