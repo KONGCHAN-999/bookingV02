@@ -1,25 +1,35 @@
-const express = require('express')
-
-const morgan = require('morgan')
-const cors = require('cors')
-const bodyParse = require('body-parser')
-
-const connectDB = require('./Config/db')
-
-
-const { readdirSync } = require('fs')
+const express = require('express');
+const morgan = require('morgan');
+const cors = require('cors');
+const path = require('path');
+const connectDB = require('./Config/db');
+const { readdirSync } = require('fs');
 
 const app = express();
 
-connectDB()
+// Connect to database
+connectDB();
 
-app.use(morgan('dev'))
-app.use(cors())
-app.use(bodyParse.json({ limit: '10mb' }))
+// Middleware
+app.use(morgan('dev'));
+app.use(cors());
+app.use(express.json({ limit: '10mb' })); // Fixed: Use express.json instead of bodyParse
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Added for form data
 
-// Route 3
+// Static files - serve uploaded images
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Routes
 readdirSync('./Routes')
-    .map((r) => app.use('/api', require('./Routes/' + r)))
+    .map((r) => app.use('/api', require('./Routes/' + r)));
 
+// Error handling middleware
+app.use((error, req, res, next) => {
+    console.error('Global error handler:', error);
+    res.status(500).json({ message: error.message || 'Server Error' });
+});
 
-app.listen(3000, () => console.log('Server is Running 3000'))
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});

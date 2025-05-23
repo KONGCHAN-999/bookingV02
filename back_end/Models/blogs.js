@@ -8,17 +8,18 @@ const blogs = mongoose.Schema({
     },
     author: {
         type: String,
-        required: true,
         trim: true
-    },
-    publishDate: {
-        type: Date,
-        default: Date.now
     },
     content: {
         type: String,
-        required: true
-    }
+        trim: true
+    },
+    files: [{
+        filename: String,
+        originalName: String,
+        mimetype: String,
+        size: Number
+    }],
 }, { timestamps: true }); // Note: lowercase 't' in timestamps
 
 module.exports = mongoose.model('Blog', blogs);

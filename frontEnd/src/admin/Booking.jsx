@@ -1,18 +1,28 @@
 import './css/Booking.css';
 import React, { useState, useEffect } from 'react';
-import { db, auth } from '../data/firebase';
-import { collection, getDocs, deleteDoc, doc, updateDoc, query, where, addDoc } from 'firebase/firestore';
 import Dashboard from './Dashboard';
 
+const API_URL = 'http://localhost:3000/api/booking';
+const DOCTORS_API_URL = 'http://localhost:3000/api/doctor';
+
 function Booking() {
+    // State management
     const [bookings, setBookings] = useState([]);
-    const [userRole, setUserRole] = useState(null);
+    const [doctors, setDoctors] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [userRole, setUserRole] = useState('admin'); // This should come from authentication
+    
+    // Popup states
+    const [showBookingForm, setShowBookingForm] = useState(false);
     const [showPopup, setShowPopup] = useState(false);
     const [showPopupFinish, setShowPopupFinish] = useState(false);
     const [showDetailPopup, setShowDetailPopup] = useState(false);
-    const [selectedBookingId, setSelectedBookingId] = useState(null);
     const [selectedBooking, setSelectedBooking] = useState(null);
-    const [showBookingForm, setShowBookingForm] = useState(false);
+    const [bookingToDelete, setBookingToDelete] = useState(null);
+    const [bookingToFinish, setBookingToFinish] = useState(null);
+    
+    // Form states
     const [bookingForm, setBookingForm] = useState({
         name: '',
         phone: '',
@@ -20,341 +30,335 @@ function Booking() {
         date: '',
         time: '',
         case: '',
-        description: '',
+        description: ''
     });
     const [formError, setFormError] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    
+    // Time slot management
+    const [bookedTimeSlots, setBookedTimeSlots] = useState([]);
+    const allTimeSlots = [
+        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'
+    ];
 
-    // List of available doctors (example)
-    const doctors = ['Dr. Smith', 'Dr. Johnson', 'Dr. Lee'];
-
-    // Fetch user role and bookings
-    useEffect(() => {
-        const fetchData = async () => {
-            const user = auth.currentUser;
-            if (!user) return;
-
-            try {
-                // Fetch user role from Firestore
-                const userDoc = await getDocs(
-                    query(collection(db, 'users'), where('__name__', '==', user.uid))
-                );
-                const role = userDoc.empty ? 'user' : userDoc.docs[0].data().role || 'user';
-                setUserRole(role);
-
-                // Fetch bookings based on role
-                let bookingsQuery;
-                if (role === 'admin') {
-                    bookingsQuery = collection(db, 'bookings');
-                } else {
-                    bookingsQuery = query(
-                        collection(db, 'bookings'),
-                        where('userId', '==', user.uid)
-                    );
+    // Fetch bookings from API
+    const fetchBookings = async () => {
+        try {
+            const response = await fetch(API_URL, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // Add authorization header if needed
+                    // 'Authorization': `Bearer ${token}`
                 }
-
-                const querySnapshot = await getDocs(bookingsQuery);
-                const bookingsData = querySnapshot.docs.map((doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
-                }));
-                setBookings(bookingsData);
-            } catch (error) {
-                console.error('Error fetching data:', error);
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-        };
+            
+            const data = await response.json();
+            setBookings(data);
+        } catch (err) {
+            setError('Failed to fetch bookings: ' + err.message);
+            console.error('Error fetching bookings:', err);
+        }
+    };
 
-        fetchData();
+    // Fetch doctors from API
+    const fetchDoctors = async () => {
+        try {
+            const response = await fetch(DOCTORS_API_URL, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            setDoctors(data);
+        } catch (err) {
+            setError('Failed to fetch doctors: ' + err.message);
+            console.error('Error fetching doctors:', err);
+        }
+    };
+
+    // Fetch booked time slots for a specific doctor and date
+    const fetchBookedTimeSlots = async (doctor, date) => {
+        try {
+            const response = await fetch(`${API_URL}/timeslots?doctor=${encodeURIComponent(doctor)}&date=${date}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                setBookedTimeSlots(data.bookedSlots || []);
+            }
+        } catch (err) {
+            console.error('Error fetching booked time slots:', err);
+        }
+    };
+
+    // Initial data loading
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            await Promise.all([fetchBookings(), fetchDoctors()]);
+            setLoading(false);
+        };
+        
+        loadData();
     }, []);
 
-    // Handle form input changes
+    // Update booked time slots when doctor or date changes
+    useEffect(() => {
+        if (bookingForm.doctor && bookingForm.date) {
+            fetchBookedTimeSlots(bookingForm.doctor, bookingForm.date);
+        } else {
+            setBookedTimeSlots([]);
+        }
+    }, [bookingForm.doctor, bookingForm.date]);
+
+    // Form handlers
     const handleFormChange = (e) => {
         const { name, value } = e.target;
-        setBookingForm((prev) => ({ ...prev, [name]: value }));
+        setBookingForm(prev => ({
+            ...prev,
+            [name]: value
+        }));
+        
+        // Clear time when doctor or date changes
+        if (name === 'doctor' || name === 'date') {
+            setBookingForm(prev => ({
+                ...prev,
+                time: ''
+            }));
+        }
+        
+        // Clear form error when user starts typing
+        if (formError) {
+            setFormError('');
+        }
     };
 
-    // Handle form submission
     const handleFormSubmit = async (e) => {
         e.preventDefault();
-        const { name, phone, doctor, date, time, case: caseValue } = bookingForm;
-
-        // Basic validation
-        if (!name || !phone || !doctor || !date || !time || !caseValue) {
-            setFormError('Please fill in all required fields.');
-            return;
-        }
+        setSubmitting(true);
+        setFormError('');
 
         try {
-            const user = auth.currentUser;
-            if (!user) {
-                setFormError('You must be logged in to create a booking.');
-                return;
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ...bookingForm,
+                    status: 'scheduled'
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to create booking');
             }
 
-            // Create new booking
-            const newBooking = {
-                ...bookingForm,
-                status: 'pending',
-                userId: user.uid,
-                createdAt: new Date().toISOString(),
-            };
+            const newBooking = await response.json();
+            setBookings(prev => [...prev, newBooking]);
+            closeBookingForm();
+            
+            // Show success message (you can implement a toast notification)
+            alert('Booking created successfully!');
+            
+        } catch (err) {
+            setFormError(err.message);
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-            const docRef = await addDoc(collection(db, 'bookings'), newBooking);
-            setBookings((prev) => [
-                ...prev,
-                { id: docRef.id, ...newBooking },
-            ]);
-
-            // Reset form and close
-            setBookingForm({
-                name: '',
-                phone: '',
-                doctor: '',
-                date: '',
-                time: '',
-                case: '',
-                description: '',
+    // Delete booking
+    const confirmDelete = async () => {
+        try {
+            const response = await fetch(`${API_URL}/${bookingToDelete}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
-            setShowBookingForm(false);
-            setFormError('');
-        } catch (error) {
-            console.error('Error creating booking:', error);
-            setFormError('Failed to create booking. Please try again.');
+
+            if (!response.ok) {
+                throw new Error('Failed to delete booking');
+            }
+
+            setBookings(prev => prev.filter(booking => booking._id !== bookingToDelete));
+            closePopup();
+            
+            // Show success message
+            alert('Booking deleted successfully!');
+            
+        } catch (err) {
+            alert('Error deleting booking: ' + err.message);
         }
     };
 
-    // Delete a booking
-    const handleDelete = async (id) => {
+    // Complete booking
+    const confirmFinish = async () => {
         try {
-            await deleteDoc(doc(db, 'bookings', id));
-            setBookings((prevBookings) => prevBookings.filter((booking) => booking.id !== id));
-        } catch (error) {
-            console.error('Error deleting booking:', error);
+            const response = await fetch(`${API_URL}/${bookingToFinish}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status: 'completed' })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to complete booking');
+            }
+
+            const updatedBooking = await response.json();
+            setBookings(prev => prev.map(booking => 
+                booking._id === bookingToFinish ? updatedBooking : booking
+            ));
+            closePopup();
+            
+            // Show success message
+            alert('Booking marked as completed!');
+            
+        } catch (err) {
+            alert('Error completing booking: ' + err.message);
         }
     };
 
-    // Mark a booking as completed
-    const handleFinish = async (id) => {
-        try {
-            const bookingRef = doc(db, 'bookings', id);
-            await updateDoc(bookingRef, { status: 'completed' });
-            setBookings((prevBookings) =>
-                prevBookings.map((booking) =>
-                    booking.id === id ? { ...booking, status: 'completed' } : booking
-                )
-            );
-        } catch (error) {
-            console.error('Error finishing booking:', error);
-        }
-    };
-
-    // Open delete confirmation popup
-    const openDeletePopup = (id) => {
-        setSelectedBookingId(id);
-        setShowPopup(true);
-    };
-
-    // Open finish confirmation popup
-    const openFinishPopup = (id) => {
-        setSelectedBookingId(id);
-        setShowPopupFinish(true);
-    };
-
-    // Open booking detail popup
+    // Popup handlers
     const openDetailPopup = (booking) => {
         setSelectedBooking(booking);
         setShowDetailPopup(true);
     };
 
-    // Close any popup
+    const openDeletePopup = (bookingId) => {
+        setBookingToDelete(bookingId);
+        setShowPopup(true);
+    };
+
+    const openFinishPopup = (bookingId) => {
+        setBookingToFinish(bookingId);
+        setShowPopupFinish(true);
+    };
+
     const closePopup = () => {
-        setSelectedBookingId(null);
-        setSelectedBooking(null);
         setShowPopup(false);
         setShowPopupFinish(false);
         setShowDetailPopup(false);
+        setSelectedBooking(null);
+        setBookingToDelete(null);
+        setBookingToFinish(null);
     };
 
-    // Confirm delete action
-    const confirmDelete = () => {
-        if (selectedBookingId) {
-            handleDelete(selectedBookingId);
-        }
-        closePopup();
+    const closeBookingForm = () => {
+        setShowBookingForm(false);
+        setBookingForm({
+            name: '',
+            phone: '',
+            doctor: '',
+            date: '',
+            time: '',
+            case: '',
+            description: ''
+        });
+        setFormError('');
+        setSubmitting(false);
     };
 
-    // Confirm finish action
-    const confirmFinish = () => {
-        if (selectedBookingId) {
-            handleFinish(selectedBookingId);
-        }
-        closePopup();
+    // Utility functions
+    const getCurrentDate = () => {
+        const today = new Date();
+        return today.toISOString().split('T')[0];
     };
 
-    // Helper function to get status class
-    const getStatusClass = (status) => {
-        switch (status?.toLowerCase()) {
-            case 'confirmed':
-                return 'status-confirmed';
-            case 'pending':
-                return 'status-pending';
-            case 'completed':
-                return 'status-completed';
-            default:
-                return '';
-        }
+    const isTimeSlotBooked = (timeSlot) => {
+        return bookedTimeSlots.includes(timeSlot);
     };
+
+    const isTimeSlotPassed = (timeSlot) => {
+        if (!bookingForm.date) return false;
+        
+        const today = new Date();
+        const selectedDate = new Date(bookingForm.date);
+        
+        // If selected date is not today, time hasn't passed
+        if (selectedDate.toDateString() !== today.toDateString()) {
+            return false;
+        }
+        
+        // Check if time slot has passed today
+        const [hours, minutes] = timeSlot.split(':').map(Number);
+        const slotTime = new Date();
+        slotTime.setHours(hours, minutes, 0, 0);
+        
+        return slotTime < today;
+    };
+
+    const formatTimeDisplay = (timeSlot) => {
+        const [hours, minutes] = timeSlot.split(':');
+        const hour = parseInt(hours);
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour % 12 || 12;
+        return `${displayHour}:${minutes} ${ampm}`;
+    };
+
+    if (loading) {
+        return (
+            <>
+                <Dashboard />
+                <div className="container_admin">
+                    <div className="loading-message">Loading bookings...</div>
+                </div>
+            </>
+        );
+    }
+
+    if (error) {
+        return (
+            <>
+                <Dashboard />
+                <div className="container_admin">
+                    <div className="error-message">
+                        Error: {error}
+                        <button onClick={() => window.location.reload()}>Retry</button>
+                    </div>
+                </div>
+            </>
+        );
+    }
+
     return (
         <>
             <Dashboard />
             <div className="container_admin">
                 <div className="box-list-bookings">
-                    <div className="booking-list-header">
-                        <h1>
-                            {userRole === 'admin' ? 'All Bookings' : 'My Bookings'}
-                        </h1>
-                        {userRole !== 'admin' && (
-                            <button
-                                className="add-booking-button"
-                                onClick={() => setShowBookingForm(!showBookingForm)}
-                                aria-label={showBookingForm ? 'Close booking form' : 'Open booking form'}
-                            >
-                                <i className="bx bx-plus"></i>
-                                {showBookingForm ? 'Cancel' : 'Create Booking'}
-                            </button>
-                        )}
+                    {/* Add booking button */}
+                    <div className="booking-header">
+                        <h2>Booking Management</h2>
+                        <button 
+                            className="add-booking-button"
+                            onClick={() => setShowBookingForm(true)}
+                        >
+                            Add New Booking
+                        </button>
                     </div>
 
-                    {showBookingForm && userRole !== 'admin' && (
-                        <form className="booking_form" onSubmit={handleFormSubmit}>
-                            {formError && (
-                                <div className="alert alert-danger">
-                                    {formError}
-                                    <button
-                                        type="button"
-                                        className="dismiss_error"
-                                        onClick={() => setFormError('')}
-                                        aria-label="Dismiss error"
-                                    >
-                                        <i className="bx bx-x"></i>
-                                    </button>
-                                </div>
-                            )}
-                            <div className="form-group">
-                                <label htmlFor="name">Name:</label>
-                                <input
-                                    type="text"
-                                    id="name"
-                                    name="name"
-                                    value={bookingForm.name}
-                                    onChange={(e) => {
-                                        handleFormChange(e);
-                                        setFormError('');
-                                    }}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="phone">Phone:</label>
-                                <input
-                                    type="tel"
-                                    id="phone"
-                                    name="phone"
-                                    value={bookingForm.phone}
-                                    onChange={(e) => {
-                                        handleFormChange(e);
-                                        setFormError('');
-                                    }}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="doctor">Doctor:</label>
-                                <select
-                                    id="doctor"
-                                    name="doctor"
-                                    value={bookingForm.doctor}
-                                    onChange={(e) => {
-                                        handleFormChange(e);
-                                        setFormError('');
-                                    }}
-                                    required
-                                >
-                                    <option value="">Select a doctor</option>
-                                    {doctors.map((doc) => (
-                                        <option key={doc} value={doc}>{doc}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="date">Date:</label>
-                                <input
-                                    type="date"
-                                    id="date"
-                                    name="date"
-                                    value={bookingForm.date}
-                                    onChange={(e) => {
-                                        handleFormChange(e);
-                                        setFormError('');
-                                    }}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="time">Time:</label>
-                                <input
-                                    type="time"
-                                    id="time"
-                                    name="time"
-                                    value={bookingForm.time}
-                                    onChange={(e) => {
-                                        handleFormChange(e);
-                                        setFormError('');
-                                    }}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="case">Case:</label>
-                                <input
-                                    type="text"
-                                    id="case"
-                                    name="case"
-                                    value={bookingForm.case}
-                                    onChange={(e) => {
-                                        handleFormChange(e);
-                                        setFormError('');
-                                    }}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="description">Description:</label>
-                                <textarea
-                                    id="description"
-                                    name="description"
-                                    value={bookingForm.description}
-                                    onChange={(e) => {
-                                        handleFormChange(e);
-                                        setFormError('');
-                                    }}
-                                />
-                            </div>
-                            <div className="form-actions">
-                                <button type="submit" className="btn_submit_booking">
-                                    Submit Booking
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn_cancel"
-                                    onClick={() => setShowBookingForm(false)}
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </form>
-                    )}
-
-                    {bookings.length === 0 && !showBookingForm ? (
+                    {/* Bookings Table */}
+                    {bookings.length === 0 ? (
                         <p className="no-bookings-message">No bookings found.</p>
                     ) : (
                         <table className="booking-list-table">
@@ -370,13 +374,13 @@ function Booking() {
                             </thead>
                             <tbody>
                                 {bookings.map((booking) => (
-                                    <tr key={booking.id}>
+                                    <tr key={booking._id}>
                                         <td>{booking.name}</td>
                                         <td>{booking.doctor}</td>
                                         <td>{booking.date} at {booking.time}</td>
                                         <td>{booking.case}</td>
                                         <td>
-                                            <span className={`status-badge ${booking.status.toLowerCase()}`}>
+                                            <span className={`status-badge ${booking.status}`}>
                                                 {booking.status}
                                             </span>
                                         </td>
@@ -393,7 +397,7 @@ function Booking() {
                                                 {userRole === 'admin' && booking.status !== 'completed' && (
                                                     <button
                                                         className="complete-button"
-                                                        onClick={() => openFinishPopup(booking.id)}
+                                                        onClick={() => openFinishPopup(booking._id)}
                                                         aria-label="Mark booking as finished"
                                                     >
                                                         <i className="bx bx-check"></i> Complete
@@ -403,7 +407,7 @@ function Booking() {
                                                 {userRole === 'admin' && (
                                                     <button
                                                         className="delete-button"
-                                                        onClick={() => openDeletePopup(booking.id)}
+                                                        onClick={() => openDeletePopup(booking._id)}
                                                         aria-label="Delete booking"
                                                     >
                                                         <i className="bx bx-trash"></i> Delete
@@ -417,6 +421,165 @@ function Booking() {
                         </table>
                     )}
 
+                    {/* Booking Form Popup */}
+                    {showBookingForm && (
+                        <div className="popup_detail">
+                            <div className="popup_detail_content booking-form-popup">
+                                <div className="detail_header">
+                                    <h2>Create New Booking</h2>
+                                    <button
+                                        className="button_close"
+                                        onClick={closeBookingForm}
+                                        aria-label="Close booking form"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+
+                                <div className="detail_body">
+                                    {formError && (
+                                        <div className="form-error">
+                                            {formError}
+                                        </div>
+                                    )}
+
+                                    <form className="form-content" onSubmit={handleFormSubmit}>
+                                        <div className="form-group">
+                                            <label className="label-form">Full Name:</label>
+                                            <input
+                                                className="input-form"
+                                                type="text"
+                                                name="name"
+                                                placeholder="Enter your full name..."
+                                                value={bookingForm.name}
+                                                onChange={handleFormChange}
+                                                required
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="label-form">Phone Number:</label>
+                                            <input
+                                                className="input-form"
+                                                type="text"
+                                                name="phone"
+                                                placeholder="Enter your phone number..."
+                                                value={bookingForm.phone}
+                                                onChange={handleFormChange}
+                                                required
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="label-form">Doctor:</label>
+                                            <select
+                                                name="doctor"
+                                                className="select-doctor"
+                                                value={bookingForm.doctor}
+                                                onChange={handleFormChange}
+                                                required
+                                            >
+                                                <option value="">Select a doctor</option>
+                                                {doctors.map((doctor) => (
+                                                    <option key={doctor._id || doctor.id} value={doctor.fullName || doctor.name}>
+                                                        {doctor.fullName || doctor.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="label-form">Date:</label>
+                                            <input
+                                                className="input-form"
+                                                type="date"
+                                                name="date"
+                                                value={bookingForm.date}
+                                                onChange={handleFormChange}
+                                                min={getCurrentDate()}
+                                                required
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="label-form">Time:</label>
+                                            <select
+                                                name="time"
+                                                className="select-doctor"
+                                                value={bookingForm.time}
+                                                onChange={handleFormChange}
+                                                disabled={!bookingForm.doctor || !bookingForm.date}
+                                                required
+                                            >
+                                                <option value="">Select a time slot</option>
+                                                {allTimeSlots.map((timeSlot) => (
+                                                    <option
+                                                        key={timeSlot}
+                                                        value={timeSlot}
+                                                        disabled={isTimeSlotBooked(timeSlot) || isTimeSlotPassed(timeSlot)}
+                                                    >
+                                                        {formatTimeDisplay(timeSlot)}
+                                                        {isTimeSlotBooked(timeSlot) ? ' (Booked)' : ''}
+                                                        {!isTimeSlotBooked(timeSlot) && isTimeSlotPassed(timeSlot) ? ' (Passed)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {!bookingForm.doctor && <p className="text-muted">Please select a doctor first</p>}
+                                            {!bookingForm.date && bookingForm.doctor && <p className="text-muted">Please select a date</p>}
+                                            {bookingForm.doctor && bookingForm.date && bookedTimeSlots.length === allTimeSlots.length && (
+                                                <p className="text-muted">All time slots are booked for this doctor on this date</p>
+                                            )}
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="label-form">Case:</label>
+                                            <input
+                                                className="input-form"
+                                                type="text"
+                                                name="case"
+                                                placeholder="Enter case type..."
+                                                value={bookingForm.case}
+                                                onChange={handleFormChange}
+                                                required
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label className="label-form">Description:</label>
+                                            <textarea
+                                                className="input-form"
+                                                name="description"
+                                                placeholder="Enter description (optional)..."
+                                                value={bookingForm.description}
+                                                onChange={handleFormChange}
+                                                rows="3"
+                                            />
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <div className="detail_footer">
+                                    <button
+                                        className="btn_finish"
+                                        onClick={handleFormSubmit}
+                                        disabled={submitting}
+                                        aria-label="Create booking"
+                                    >
+                                        {submitting ? 'Creating...' : 'Create Booking'}
+                                    </button>
+                                    <button
+                                        className="btn_cancel"
+                                        onClick={closeBookingForm}
+                                        aria-label="Cancel booking creation"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Delete Confirmation Popup */}
                     {showPopup && userRole === 'admin' && (
                         <div className="popup_delete">
                             <div className="popup_delete_content">
@@ -441,6 +604,7 @@ function Booking() {
                         </div>
                     )}
 
+                    {/* Complete Confirmation Popup */}
                     {showPopupFinish && userRole === 'admin' && (
                         <div className="popup_delete">
                             <div className="popup_delete_content">
@@ -465,6 +629,7 @@ function Booking() {
                         </div>
                     )}
 
+                    {/* Booking Detail Popup */}
                     {showDetailPopup && selectedBooking && (
                         <div className="popup_detail">
                             <div className="popup_detail_content">
@@ -475,7 +640,7 @@ function Booking() {
                                         onClick={closePopup}
                                         aria-label="Close details popup"
                                     >
-                                        &times;
+                                        ×
                                     </button>
                                 </div>
 
@@ -512,7 +677,9 @@ function Booking() {
 
                                     <div className="detail_item full-width">
                                         <h3>Description</h3>
-                                        <p className="booking-description">{selectedBooking.description}</p>
+                                        <p className="booking-description">
+                                            {selectedBooking.description || 'No description provided'}
+                                        </p>
                                     </div>
 
                                     <div className="detail_item">
@@ -531,7 +698,7 @@ function Booking() {
                                             className="btn_finish"
                                             onClick={() => {
                                                 closePopup();
-                                                openFinishPopup(selectedBooking.id);
+                                                openFinishPopup(selectedBooking._id);
                                             }}
                                             aria-label="Mark booking as finished"
                                         >
@@ -544,7 +711,7 @@ function Booking() {
                                             className="btn_delete"
                                             onClick={() => {
                                                 closePopup();
-                                                openDeletePopup(selectedBooking.id);
+                                                openDeletePopup(selectedBooking._id);
                                             }}
                                             aria-label="Delete booking"
                                         >

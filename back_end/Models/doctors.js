@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const doctors = mongoose.Schema({
+const doctorSchema = mongoose.Schema({
     fullName: {
         type: String,
         required: true,
@@ -8,36 +8,38 @@ const doctors = mongoose.Schema({
     },
     age: {
         type: Number,
-        required: true
+        min: 18,
+        max: 100
     },
     specialty: {
         type: String,
-        required: true,
         trim: true
     },
     contact: {
         type: String,
-        required: true,
         trim: true
     },
     email: {
         type: String,
         required: true,
-        trim: true
+        trim: true,
+        lowercase: true
     },
     education: {
         type: String,
-        required: true
+        trim: true
     },
     experience: {
         type: String,
-        required: true
+        trim: true
     },
     certifications: {
-        type: [String],
-        default: []
+        type: String, // FIXED: Changed from [String] to String to match frontend
+        trim: true
     },
-    file: String,
-}, { timestamps: true }); // Note: lowercase 't' in timestamps
+    file: {
+        type: String
+    }
+}, { timestamps: true });
 
-module.exports = mongoose.model('Doctor', doctors);
+module.exports = mongoose.model('Doctor', doctorSchema);

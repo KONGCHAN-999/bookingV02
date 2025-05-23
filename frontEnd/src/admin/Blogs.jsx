@@ -8,13 +8,8 @@ function Blogs() {
     const [blogs, setBlogs] = useState({
         title: '',
         author: '',
-        category: '',
         publishDate: '',
-        content: '',
-        tags: '',
-        isPublished: false,
-        image: null,
-        imageFile: null
+        content: ''
     });
 
     const [getBlogData, setGetBlogData] = useState([]);
@@ -24,6 +19,13 @@ function Blogs() {
     const [selectedBlogId, setSelectedBlogId] = useState(null);
     const [showDetailPopup, setShowDetailPopup] = useState(false);
     const [selectedBlog, setSelectedBlog] = useState(null);
+
+    // New states for image handling
+    const [selectedImages, setSelectedImages] = useState([]);
+    const [imagePreview, setImagePreview] = useState([]);
+    const [isUploading, setIsUploading] = useState(false);
+    const [dragActive, setDragActive] = useState(false);
+
     const API_URL = 'http://localhost:3000/api/blog/';
 
     // Format date to YYYY-MM-DD for input fields
@@ -44,16 +46,95 @@ function Blogs() {
         });
     };
 
+    // Handle image file selection
+    const handleImageChange = (e) => {
+        const files = Array.from(e.target.files);
+        handleFiles(files);
+    };
+
+    // Handle files (from input or drag & drop)
+    const handleFiles = (files) => {
+        const validFiles = files.filter(file => {
+            // Check file type
+            if (!file.type.startsWith('image/')) {
+                alert(`${file.name} is not an image file`);
+                return false;
+            }
+            // Check file size (5MB limit)
+            if (file.size > 5 * 1024 * 1024) {
+                alert(`${file.name} is too large. Maximum size is 5MB`);
+                return false;
+            }
+            return true;
+        });
+
+        if (validFiles.length > 0) {
+            setSelectedImages(prev => [...prev, ...validFiles]);
+
+            // Create preview URLs
+            validFiles.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    setImagePreview(prev => [...prev, {
+                        file: file,
+                        url: e.target.result,
+                        name: file.name
+                    }]);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+    };
+
+    // Remove image from selection
+    const removeImage = (index) => {
+        setSelectedImages(prev => prev.filter((_, i) => i !== index));
+        setImagePreview(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Drag and drop handlers
+    const handleDrag = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === "dragenter" || e.type === "dragover") {
+            setDragActive(true);
+        } else if (e.type === "dragleave") {
+            setDragActive(false);
+        }
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            const files = Array.from(e.dataTransfer.files);
+            handleFiles(files);
+        }
+    };
+
+    // Clear form and images
+    const clearForm = () => {
+        setBlogs({
+            title: '',
+            author: '',
+            publishDate: '',
+            content: ''
+        });
+        setSelectedImages([]);
+        setImagePreview([]);
+        setEditId(null);
+    };
+
     // Fetch blog data from MongoDB via backend API
     useEffect(() => {
         const fetchBlogData = async () => {
             try {
                 const response = await axios.get(API_URL);
                 if (response.data.blogs) {
-                    // If using the improved API response structure
                     setGetBlogData(response.data.blogs);
                 } else if (Array.isArray(response.data)) {
-                    // For backward compatibility
                     setGetBlogData(response.data);
                 } else {
                     console.error('Unexpected API response format:', response.data);
@@ -67,29 +148,8 @@ function Blogs() {
 
     const toggleSidebar = () => {
         setIsSidebarOpen(!isSidebarOpen);
-        setBlogs({
-            title: '',
-            author: '',
-            category: '',
-            publishDate: '',
-            content: '',
-            tags: '',
-            isPublished: false,
-            image: null,
-            imageFile: null
-        }); // Clear form
-        setEditId(null); // Reset edit mode
-    };
-
-    const handleImageChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const imageUrl = URL.createObjectURL(file);
-            setBlogs(prev => ({
-                ...prev,
-                imageFile: file,
-                image: imageUrl // Preview URL for UI only
-            }));
+        if (!isSidebarOpen) {
+            clearForm();
         }
     };
 
@@ -100,40 +160,38 @@ function Blogs() {
             return;
         }
 
+        setIsUploading(true);
+
         try {
+            // Create FormData for file upload
             const formData = new FormData();
             formData.append('title', blogs.title);
             formData.append('author', blogs.author);
-            formData.append('category', blogs.category);
             formData.append('publishDate', blogs.publishDate || new Date().toISOString().split('T')[0]);
             formData.append('content', blogs.content);
-            
-            // Handle tags properly
-            const tagsArray = blogs.tags
-                .split(',')
-                .map(tag => tag.trim())
-                .filter(Boolean);
-            formData.append('tags', JSON.stringify(tagsArray));
 
-            formData.append('isPublished', blogs.isPublished ? 'true' : 'false');
-
-            // Only append image if there's a new file
-            if (blogs.imageFile) {
-                formData.append('image', blogs.imageFile);
-            }
+            // Add images to FormData
+            selectedImages.forEach(image => {
+                formData.append('images', image);
+            });
 
             let response;
+            const config = {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            };
+
             if (editId) {
                 // Update existing blog
-                response = await axios.put(`${API_URL}/${editId}`, formData, {
-                    headers: {
-                        'Content-Type': 'multipart/form-data'
-                    }
-                });
-                
-                // Handle different response structures
+                console.log(`Updating blog with ID: ${editId}`);
+                const updateUrl = API_URL.endsWith('/') ? `${API_URL}${editId}/multiple` : `${API_URL}/${editId}/multiple`;
+                console.log(`Using URL: ${updateUrl}`);
+
+                response = await axios.put(updateUrl, formData, config);
+
                 const updatedBlog = response.data.blog || response.data;
-                
+
                 setGetBlogData((prev) =>
                     prev.map((blog) =>
                         blog._id === editId ? updatedBlog : blog
@@ -141,34 +199,34 @@ function Blogs() {
                 );
                 alert('Blog updated successfully!');
             } else {
-                // Add new blog
-                response = await axios.post(API_URL, formData, {
-                    headers: {
-                        'Content-Type': 'multipart/form-data'
-                    }
-                });
-                
-                // Handle different response structures
+                // Add new blog - use multiple images endpoint if images are selected
+                const endpoint = selectedImages.length > 0 ? `${API_URL}multiple` : API_URL;
+                response = await axios.post(endpoint, formData, config);
+
                 const newBlog = response.data.blog || response.data;
-                
+
                 setGetBlogData((prev) => [
                     ...prev,
                     { ...newBlog, id: newBlog._id },
                 ]);
                 alert('Blog added successfully!');
             }
+
             toggleSidebar();
+            clearForm();
         } catch (error) {
             console.error('Error saving blog:', error);
             alert('Error saving blog: ' + (error.response?.data?.message || error.message));
+        } finally {
+            setIsUploading(false);
         }
     };
 
     const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
+        const { name, value } = e.target;
         setBlogs((prev) => ({
             ...prev,
-            [name]: type === 'checkbox' ? checked : value,
+            [name]: value,
         }));
     };
 
@@ -184,7 +242,7 @@ function Blogs() {
 
     const handleDelete = async (id) => {
         try {
-            await axios.delete(`${API_URL}/${id}`);
+            await axios.delete(`${API_URL}${id}`);
             setGetBlogData((prev) => prev.filter((blog) => blog._id !== id));
             alert('Blog deleted successfully!');
         } catch (error) {
@@ -205,14 +263,14 @@ function Blogs() {
         setBlogs({
             title: blog.title || '',
             author: blog.author || '',
-            category: blog.category || '',
             publishDate: formatDateForInput(blog.publishDate) || '',
-            content: blog.content || '',
-            tags: Array.isArray(blog.tags) ? blog.tags.join(', ') : '',
-            isPublished: blog.isPublished || false,
-            image: blog.image || null,
-            imageFile: null
+            content: blog.content || ''
         });
+
+        // Clear previous images when editing
+        setSelectedImages([]);
+        setImagePreview([]);
+
         setIsSidebarOpen(true);
     };
 
@@ -232,25 +290,35 @@ function Blogs() {
         return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
     };
 
-    // Improved function to get image URL from server
-    const getImageUrl = (blog) => {
-        if (!blog.image) return null;
-        
-        // If it's a client-side preview URL (from URL.createObjectURL)
-        if (typeof blog.image === 'object' || blog.image.startsWith('blob:')) {
-            return blog.image;
+    // Render blog images
+    const renderBlogImages = (blog) => {
+        const images = [];
+
+        // Add single image (backward compatibility)
+        if (blog.file) {
+            images.push(`http://localhost:3000/uploads/${blog.file}`);
         }
-        
-        // If it already starts with http, it's a full URL
-        if (blog.image.startsWith('http')) {
-            return blog.image;
+
+        // Add multiple images
+        if (blog.files && blog.files.length > 0) {
+            blog.files.forEach(file => {
+                images.push(`http://localhost:3000/uploads/${file.filename}`);
+            });
         }
-        
-        // Make sure the path starts with / for server urls
-        const imagePath = blog.image.startsWith('/') ? blog.image : `/${blog.image}`;
-        
-        // Return the full server URL
-        return `http://localhost:3000${imagePath}`;
+
+        return images;
+    };
+
+    // Remove image preview
+    const removeImagePreview = () => {
+        if (imagePreview && imagePreview.startsWith('blob:')) {
+            URL.revokeObjectURL(imagePreview);
+        }
+        setImagePreview(null);
+        setDoctors(prev => ({ ...prev, image: null }));
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     return (
@@ -271,72 +339,76 @@ function Blogs() {
                             <tr>
                                 <th scope="col">Title</th>
                                 <th scope="col">Author</th>
-                                <th scope="col">Category</th>
                                 <th scope="col">Date</th>
-                                <th scope="col">Status</th>
+                                <th scope="col">Images</th>
                                 <th scope="col">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {getBlogData.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="no-blogs-message">No blogs found. Add your first blog!</td>
+                                    <td colSpan="5" className="no-blogs-message">No blogs found. Add your first blog!</td>
                                 </tr>
                             ) : (
-                                getBlogData.map((blog) => (
-                                    <tr key={blog._id}>
-                                        <td>
-                                            {blog.image && (
-                                                <img
-                                                    src={getImageUrl(blog)}
-                                                    alt={blog.title}
-                                                    style={{ width: '50px', height: '50px', objectFit: 'cover', marginRight: '10px' }}
-                                                    onError={(e) => {
-                                                        console.error("Image load failed:", blog.image);
-                                                        e.target.src = 'https://via.placeholder.com/50?text=No+Image';
-                                                    }}
-                                                />
-                                            )}
-                                            {truncateText(blog.title)}
-                                        </td>
-                                        <td>{blog.author}</td>
-                                        <td>{blog.category || 'Uncategorized'}</td>
-                                        <td>{formatDateForDisplay(blog.publishDate)}</td>
-                                        <td>
-                                            <span className={`status-badge ${blog.isPublished ? 'published' : 'draft'}`}>
-                                                {blog.isPublished ? 'Published' : 'Draft'}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div className="action-buttons">
-                                                <button
-                                                    className="edit-button"
-                                                    onClick={() => handleUpdate(blog)}
-                                                    aria-label={`Edit ${blog.title}`}
-                                                >
-                                                    <LuPencil />
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    className="delete-button"
-                                                    onClick={() => openPopup(blog._id)}
-                                                    aria-label={`Delete ${blog.title}`}
-                                                >
-                                                    <i className="bx bx-trash"></i>
-                                                    Delete
-                                                </button>
-                                                <button
-                                                    className="view-button"
-                                                    onClick={() => handleDetail(blog)}
-                                                    aria-label={`View ${blog.title}`}
-                                                >
-                                                    <i className="bx bx-show"></i>
-                                                    View
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                getBlogData.map((blog) => {
+                                    const blogImages = renderBlogImages(blog);
+                                    return (
+                                        <tr key={blog._id}>
+                                            <td>{truncateText(blog.title)}</td>
+                                            <td>{blog.author}</td>
+                                            <td>{formatDateForDisplay(blog.publishDate)}</td>
+                                            <td>
+                                                <div className="blog-images-preview">
+                                                    {blogImages.length > 0 ? (
+                                                        <>
+                                                            <img
+                                                                src={blogImages[0]}
+                                                                alt="Blog preview"
+                                                                className="table-image-preview"
+                                                                onError={(e) => {
+                                                                    e.target.style.display = 'none';
+                                                                }}
+                                                            />
+                                                            {blogImages.length > 1 && (
+                                                                <span className="image-count">+{blogImages.length - 1}</span>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <span className="no-images">No images</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div className="action-buttons">
+                                                    <button
+                                                        className="edit-button"
+                                                        onClick={() => handleUpdate(blog)}
+                                                        aria-label={`Edit ${blog.title}`}
+                                                    >
+                                                        <LuPencil />
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        className="delete-button"
+                                                        onClick={() => openPopup(blog._id)}
+                                                        aria-label={`Delete ${blog.title}`}
+                                                    >
+                                                        <i className="bx bx-trash"></i>
+                                                        Delete
+                                                    </button>
+                                                    <button
+                                                        className="view-button"
+                                                        onClick={() => handleDetail(blog)}
+                                                        aria-label={`View ${blog.title}`}
+                                                    >
+                                                        <i className="bx bx-show"></i>
+                                                        View
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
@@ -370,18 +442,6 @@ function Blogs() {
                                 </button>
                             </div>
                             <div className="detail_body">
-                                {selectedBlog.image && (
-                                    <div className="detail_item blog-image">
-                                        <img
-                                            src={getImageUrl(selectedBlog)}
-                                            alt={selectedBlog.title}
-                                            style={{ maxWidth: '100%', height: 'auto' }}
-                                            onError={(e) => {
-                                                e.target.src = 'https://via.placeholder.com/300x200?text=Image+Not+Found';
-                                            }}
-                                        />
-                                    </div>
-                                )}
                                 <div className="detail_item blog-title">
                                     <h3>Title</h3>
                                     <p>{selectedBlog.title || 'Untitled'}</p>
@@ -391,45 +451,34 @@ function Blogs() {
                                     <p>{selectedBlog.author || 'Anonymous'}</p>
                                 </div>
                                 <div className="detail_item">
-                                    <h3>Category</h3>
-                                    <p>{selectedBlog.category || 'Uncategorized'}</p>
-                                </div>
-                                <div className="detail_item">
                                     <h3>Publish Date</h3>
                                     <p>{formatDateForDisplay(selectedBlog.publishDate)}</p>
                                 </div>
-                                <div className="detail_item">
-                                    <h3>Status</h3>
-                                    <p>
-                                        <span className={`status-badge ${selectedBlog.isPublished ? 'published' : 'draft'}`}>
-                                            {selectedBlog.isPublished ? 'Published' : 'Draft'}
-                                        </span>
-                                    </p>
-                                </div>
-                                <div className="detail_item">
-                                    <h3>Tags</h3>
-                                    <div className="blog-tags">
-                                        {Array.isArray(selectedBlog.tags) && selectedBlog.tags.length > 0 ? (
-                                            selectedBlog.tags.map(tag => (
-                                                <span key={tag} className="tag-badge">{tag}</span>
-                                            ))
-                                        ) : (
-                                            <p>No tags</p>
-                                        )}
-                                    </div>
-                                </div>
-                                {selectedBlog.slug && (
-                                    <div className="detail_item">
-                                        <h3>Slug</h3>
-                                        <p>{selectedBlog.slug}</p>
-                                    </div>
-                                )}
-                                {selectedBlog.excerpt && (
-                                    <div className="detail_item">
-                                        <h3>Excerpt</h3>
-                                        <p>{selectedBlog.excerpt}</p>
-                                    </div>
-                                )}
+
+                                {/* Display Blog Images */}
+                                {(() => {
+                                    const blogImages = renderBlogImages(selectedBlog);
+                                    return blogImages.length > 0 && (
+                                        <div className="detail_item full-width">
+                                            <h3>Images ({blogImages.length})</h3>
+                                            <div className="blog-images-gallery">
+                                                {blogImages.map((imageUrl, index) => (
+                                                    <div key={index} className="blog-image-container">
+                                                        <img
+                                                            src={imageUrl}
+                                                            alt={`Blog image ${index + 1}`}
+                                                            className="blog-image-full"
+                                                            onError={(e) => {
+                                                                e.target.style.display = 'none';
+                                                            }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
                                 <div className="detail_item full-width">
                                     <h3>Content</h3>
                                     <div className="blog-content">
@@ -462,7 +511,7 @@ function Blogs() {
                                 <i className="bx bx-x"></i>
                             </button>
                         </div>
-                        <form onSubmit={handleSubmit} className="form_addBlog">
+                        <form onSubmit={(e) => handleSubmit(e, imagePreview)} className="form_addBlog">
                             <div className="form-group">
                                 <label htmlFor="title">Title:</label>
                                 <input
@@ -486,24 +535,6 @@ function Blogs() {
                                 />
                             </div>
                             <div className="form-group">
-                                <label htmlFor="category">Category:</label>
-                                <select
-                                    id="category"
-                                    name="category"
-                                    value={blogs.category}
-                                    onChange={handleChange}
-                                >
-                                    <option value="">Select a category</option>
-                                    <option value="Health">Health</option>
-                                    <option value="Medical">Medical</option>
-                                    <option value="Wellness">Wellness</option>
-                                    <option value="Nutrition">Nutrition</option>
-                                    <option value="Fitness">Fitness</option>
-                                    <option value="Mental Health">Mental Health</option>
-                                    <option value="News">News</option>
-                                </select>
-                            </div>
-                            <div className="form-group">
                                 <label htmlFor="publishDate">Publish Date:</label>
                                 <input
                                     type="date"
@@ -512,55 +543,6 @@ function Blogs() {
                                     value={blogs.publishDate}
                                     onChange={handleChange}
                                 />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="image">Blog Image:</label>
-                                <input
-                                    type="file"
-                                    id="image"
-                                    name="image"
-                                    accept="image/*"
-                                    onChange={handleImageChange}
-                                />
-                                {blogs.image && (
-                                    <div className="image-preview">
-                                        <img
-                                            src={typeof blogs.image === 'string' ? 
-                                                blogs.image.startsWith('blob:') || blogs.image.startsWith('http') ? 
-                                                    blogs.image : 
-                                                    `http://localhost:3000${blogs.image.startsWith('/') ? blogs.image : `/${blogs.image}`}` : 
-                                                URL.createObjectURL(blogs.image)}
-                                            alt="Preview"
-                                            style={{ maxWidth: '200px', marginTop: '10px' }}
-                                            onError={(e) => {
-                                                e.target.src = 'https://via.placeholder.com/200?text=Preview';
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="tags">Tags (comma separated):</label>
-                                <input
-                                    type="text"
-                                    id="tags"
-                                    name="tags"
-                                    value={blogs.tags}
-                                    onChange={handleChange}
-                                    placeholder="health, wellness, medicine"
-                                />
-                            </div>
-                            <div className="form-group checkbox-group">
-                                <label htmlFor="isPublished">
-                                    <input
-                                        type="checkbox"
-                                        id="isPublished"
-                                        name="isPublished"
-                                        checked={blogs.isPublished}
-                                        onChange={handleChange}
-                                    />
-                                    Publish immediately
-                                </label>
                             </div>
                             <div className="form-group">
                                 <label htmlFor="content">Content:</label>
@@ -573,8 +555,99 @@ function Blogs() {
                                     required
                                 ></textarea>
                             </div>
-                            <button className="btn_submit_blog" type="submit">
-                                {editId ? 'Update Blog' : 'Add Blog'}
+
+                            {/* Image Upload Section */}
+                            <div className="form-group">
+                                <label htmlFor="images">Images:</label>
+                                <div
+                                    className={`image-upload-area ${dragActive ? 'drag-active' : ''}`}
+                                    onDragEnter={handleDrag}
+                                    onDragLeave={handleDrag}
+                                    onDragOver={handleDrag}
+                                    onDrop={handleDrop}
+                                >
+                                    <input
+                                        type="file"
+                                        id="images"
+                                        name="images"
+                                        multiple
+                                        accept="image/*"
+                                        onChange={handleImageChange}
+                                        className="image-input-hidden"
+                                        style={{ display: 'none' }}
+                                    />
+                                    <div className="upload-content">
+                                        <i className="bx bx-cloud-upload upload-icon"></i>
+                                        <p>Drag and drop images here or click to select</p>
+                                        <p className="upload-info">Maximum 10 images, 5MB each</p>
+                                        <button
+                                            type="button"
+                                            className="select-files-btn"
+                                            onClick={() => document.getElementById('images').click()}
+                                        >
+                                            Select Images
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Image Preview */}
+                                {imagePreview.length > 0 && (
+                                    <div className="image-preview-container">
+                                        <h4>Selected Images ({imagePreview.length})</h4>
+                                        <div className="image-preview-grid">
+                                            {imagePreview.map((preview, index) => (
+                                                <div key={index} className="image-preview-item">
+                                                    <img src={preview.url} alt={preview.name} />
+                                                    <div className="image-preview-overlay">
+                                                        <button
+                                                            type="button"
+                                                            className="remove-image-btn"
+                                                            onClick={() => removeImage(index)}
+                                                            title="Remove image"
+                                                        >
+                                                            <i className="bx bx-x"></i>
+                                                        </button>
+                                                    </div>
+                                                    <p className="image-name">{truncateText(preview.name, 20)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* selected Image Preview show for edit */}
+                                {editId && imagePreview.length === 0 && (
+                                    <div className="image-preview-container">
+                                        <h4>Current Images</h4>
+                                        <div className="image-preview-grid">
+                                            {renderBlogImages(getBlogData.find(blog => blog._id === editId)).map((imageUrl, index) => (
+                                                <div key={index} className="image-preview-item">
+                                                    <img src={imageUrl} alt={`Current image ${index + 1}`} />
+                                                </div>
+                                            ))}
+                                            {/* <button
+                                                type="button"
+                                                className="remove-image-btn"
+                                                onClick={() => removeImage(index)}
+                                                title="Remove image"
+                                            >
+                                                <i className="bx bx-x"></i>
+                                            </button> */}
+                                        </div>
+
+                                    </div>
+                                )}
+
+                            </div>
+
+                            <button className="btn_submit_blog" type="submit" disabled={isUploading}>
+                                {isUploading ? (
+                                    <>
+                                        <i className="bx bx-loader-alt rotating"></i>
+                                        {editId ? 'Updating...' : 'Adding...'}
+                                    </>
+                                ) : (
+                                    editId ? 'Update Blog' : 'Add Blog'
+                                )}
                             </button>
                         </form>
                     </div>

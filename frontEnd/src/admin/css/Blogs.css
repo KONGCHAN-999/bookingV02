@@ -491,6 +491,268 @@
     color: #777;
 }
 
+
+/* Add these styles to your existing Blogs.css file */
+
+/* Image Upload Area */
+.image-upload-area {
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    background-color: #f8fafc;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    margin-top: 8px;
+}
+
+.image-upload-area:hover {
+    border-color: #3b82f6;
+    background-color: #eff6ff;
+}
+
+.image-upload-area.drag-active {
+    border-color: #3b82f6;
+    background-color: #dbeafe;
+    transform: scale(1.02);
+}
+
+.upload-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.upload-icon {
+    font-size: 48px;
+    color: #64748b;
+}
+
+.upload-content p {
+    margin: 0;
+    color: #64748b;
+}
+
+.upload-info {
+    font-size: 0.875rem;
+    color: #94a3b8;
+}
+
+.select-files-btn {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.select-files-btn:hover {
+    background-color: #2563eb;
+}
+
+/* Image Preview */
+.image-preview-container {
+    margin-top: 20px;
+    padding: 20px;
+    background-color: #f1f5f9;
+    border-radius: 8px;
+}
+
+.image-preview-container h4 {
+    margin: 0 0 15px 0;
+    color: #334155;
+    font-size: 1rem;
+}
+
+.image-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 15px;
+}
+
+.image-preview-item {
+    position: relative;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s;
+}
+
+.image-preview-item:hover {
+    transform: translateY(-2px);
+}
+
+.image-preview-item img {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    display: block;
+}
+
+.image-preview-overlay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 0 0 0 8px;
+}
+
+.remove-image-btn {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 18px;
+    padding: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.remove-image-btn:hover {
+    background: rgba(239, 68, 68, 0.8);
+}
+
+.image-name {
+    padding: 8px;
+    font-size: 0.75rem;
+    color: #64748b;
+    text-align: center;
+    margin: 0;
+    word-break: break-word;
+}
+
+/* Table Image Preview */
+.blog-images-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.table-image-preview {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+}
+
+.image-count {
+    background-color: #64748b;
+    color: white;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+.no-images {
+    color: #94a3b8;
+    font-size: 0.875rem;
+    fontStyle: italic;
+}
+
+/* Blog Detail Images */
+.blog-images-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.blog-image-container {
+    position: relative;
+    background: #f8fafc;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.blog-image-full {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.blog-image-full:hover {
+    transform: scale(1.05);
+}
+
+/* Loading Animation */
+.rotating {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Button States */
+.btn_submit_blog:disabled {
+    background-color: #94a3b8;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.btn_submit_blog:disabled:hover {
+    background-color: #94a3b8;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .image-preview-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 10px;
+    }
+
+    .image-preview-item img {
+        height: 80px;
+    }
+
+    .blog-images-gallery {
+        grid-template-columns: 1fr;
+    }
+
+    .blog-image-full {
+        height: 150px;
+    }
+
+    .upload-content {
+        padding: 20px 10px;
+    }
+
+    .upload-icon {
+        font-size: 36px;
+    }
+}
+
+/* Update table to accommodate new Images column */
+.blog-list-table th:nth-child(4),
+.blog-list-table td:nth-child(4) {
+    width: 100px;
+    text-align: center;
+}
+
+/* Ensure the Actions column has proper width */
+.blog-list-table th:nth-child(5),
+.blog-list-table td:nth-child(5) {
+    width: 200px;
+}
+
 /* Responsive Adjustments */
 @media (max-width: 1200px) {
     .container_admin {
